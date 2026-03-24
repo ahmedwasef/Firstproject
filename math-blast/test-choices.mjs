@@ -1,5 +1,5 @@
 /**
- * Math Blast — Choice Buttons Test (Desktop + Mobile)
+ * Math Blast — Keypad Tests (Desktop + Mobile)
  * Serves files locally so we test the latest build.
  */
 import { chromium, devices } from './node_modules/playwright/index.mjs';
@@ -27,7 +27,7 @@ const server = createServer((req, res) => {
 await new Promise(r => server.listen(7777, r));
 const URL = 'http://localhost:7777/';
 
-console.log('\n\x1b[1m═══════════════ Math Blast — Choice Button Tests ═══════════════\x1b[0m');
+console.log('\n\x1b[1m═══════════════ Math Blast — Keypad Tests ═══════════════\x1b[0m');
 
 // ────────────────────────────────────────────────────────────
 // DESKTOP CHROME
@@ -42,75 +42,101 @@ console.log('\n\x1b[1m🖥  Desktop Chrome (1280×800)\x1b[0m');
 
   // 1. Menu state
   assert(await page.locator('#screen-menu').isVisible(),  'Menu visible on load');
-  assert(await page.locator('#choices-panel').isHidden(), 'Choices panel hidden on menu');
+  assert(await page.locator('#keypad-panel').isHidden(),  'Keypad panel hidden on menu');
   assert(await page.locator('#answer').count() === 0,     'No text input in DOM');
 
   // 2. Start game
   await page.locator('.btn-diff.easy').click();
   await page.waitForTimeout(500);
-  assert(await page.locator('#choices-panel').isVisible(), 'Choices panel appears after start');
-  assert(await page.locator('#screen-hud').isVisible(),    'HUD visible');
-  assert(await page.locator('#screen-menu').isHidden(),    'Menu hidden during game');
+  assert(await page.locator('#keypad-panel').isVisible(), 'Keypad panel appears after start');
+  assert(await page.locator('#screen-hud').isVisible(),   'HUD visible');
+  assert(await page.locator('#screen-menu').isHidden(),   'Menu hidden during game');
 
-  // 3. Wait for first asteroid → choices populate
-  await page.waitForTimeout(4600);
-  const btnTexts = await page.locator('.choice-btn').allTextContents();
-  assert(btnTexts.length === 4,                          '4 choice buttons present');
-  assert(btnTexts.every(t => t.trim() !== ''),           'All buttons have values');
-  assert(new Set(btnTexts).size === 4,                   'All 4 values are distinct');
-  console.log(`  ${INFO} Choices: ${btnTexts.join(' | ')}`);
+  // 3. Keypad structure: 12 buttons
+  const keyBtns = await page.locator('.key-btn').count();
+  assert(keyBtns === 12, `12 key buttons present (got ${keyBtns})`);
 
-  // 4. Canvas height + panel height = viewport height
+  // 4. Display shows placeholder dash
+  const dispText = await page.locator('#keypad-input').textContent();
+  assert(dispText === '–', `Display shows '–' initially (got '${dispText}')`);
+
+  // 5. Canvas height + panel height = viewport height
   const metrics = await page.evaluate(() => ({
     canvasH: parseFloat(document.getElementById('gameCanvas').style.height),
-    panelH:  document.getElementById('choices-panel').offsetHeight,
+    panelH:  document.getElementById('keypad-panel').offsetHeight,
     vpH:     window.innerHeight,
   }));
   assert(Math.abs(metrics.canvasH + metrics.panelH - metrics.vpH) < 5,
     `Canvas(${metrics.canvasH.toFixed(0)}) + Panel(${metrics.panelH}) = Viewport(${metrics.vpH})`);
 
-  // 5. Correct answer → score increases + flash-correct
-  const scoreBefore = await page.evaluate(() =>
-    parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
-  let hit = false;
-  for (const btn of await page.locator('.choice-btn').all()) {
-    const val = parseInt(await btn.getAttribute('data-value'));
-    await btn.click();
-    await page.waitForTimeout(450);
-    const scoreNow = await page.evaluate(() =>
-      parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
-    if (scoreNow > scoreBefore) {
-      hit = true;
-      console.log(`  ${INFO} Correct choice: ${val} → +${scoreNow - scoreBefore} pts`);
-      break;
-    }
-  }
-  assert(hit, 'Clicking correct choice increases score');
+  // 6. Typing digits updates display
+  await page.keyboard.press('4');
+  await page.keyboard.press('2');
+  await page.waitForTimeout(80);
+  const afterType = await page.locator('#keypad-input').textContent();
+  assert(afterType === '42', `Typing 4,2 shows '42' (got '${afterType}')`);
 
-  // 6. Wrong answer → flash-wrong, score unchanged
+  // 7. Backspace deletes last digit
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(80);
+  const afterBackspace = await page.locator('#keypad-input').textContent();
+  assert(afterBackspace === '4', `Backspace removes last digit (got '${afterBackspace}')`);
+
+  // 8. Click '5' button → display appends
+  await page.locator('.key-btn[data-key="5"]').click();
+  await page.waitForTimeout(80);
+  const after5 = await page.locator('#keypad-input').textContent();
+  assert(after5 === '45', `Clicking '5' button appends (got '${after5}')`);
+
+  // 9. ⌫ button removes last digit
+  await page.locator('.key-btn[data-key="⌫"]').click();
+  await page.waitForTimeout(80);
+  const afterDel = await page.locator('#keypad-input').textContent();
+  assert(afterDel === '4', `⌫ button removes digit ('45' → '${afterDel}')`);
+
+  // 10. Clear display back to placeholder
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(80);
+  const cleared = await page.locator('#keypad-input').textContent();
+  assert(cleared === '–', `Cleared display shows '–' (got '${cleared}')`);
+
+  // 11. Wait for first asteroid then test wrong answer
+  await page.waitForTimeout(4600);
   const scoreBeforeWrong = await page.evaluate(() =>
     parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
-  // Force first button to a wrong value
-  await page.evaluate(() => {
-    const b = document.querySelectorAll('.choice-btn')[0];
-    b.dataset.value = '9999'; b.textContent = '9999';
-  });
-  await page.locator('.choice-btn').first().click();
-  await page.waitForTimeout(200);
-  const hasWrong = await page.evaluate(() =>
-    [...document.querySelectorAll('.choice-btn')].some(b => b.classList.contains('flash-wrong')));
-  assert(hasWrong, 'Wrong answer triggers flash-wrong animation');
+  await page.keyboard.type('9999');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(250);
   const scoreAfterWrong = await page.evaluate(() =>
     parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
   assert(scoreAfterWrong === scoreBeforeWrong, 'Score unchanged after wrong answer');
 
-  // 7. Choices refresh after correct answer (new set of numbers)
-  await page.waitForTimeout(600);
-  const newChoices = await page.locator('.choice-btn').allTextContents();
-  console.log(`  ${INFO} Choices after destroy: ${newChoices.join(' | ')}`);
-  assert(newChoices.every(t => t.trim() !== '' || true), 'Choices refreshed after asteroid destroyed');
+  // 12. Correct answer → score increases
+  let hit = false;
+  for (let attempt = 0; attempt < 20 && !hit; attempt++) {
+    await page.waitForTimeout(300);
+    if (await page.locator('#screen-gameover').isVisible()) break;
+    const correctAnswer = await page.evaluate(() => {
+      if (typeof state === 'undefined' || !state.asteroids.length) return null;
+      return state.asteroids[0].question.a;
+    });
+    if (correctAnswer !== null && correctAnswer !== undefined) {
+      const scoreBefore2 = await page.evaluate(() =>
+        parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
+      await page.keyboard.type(String(correctAnswer));
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(400);
+      const scoreNow = await page.evaluate(() =>
+        parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
+      if (scoreNow > scoreBefore2) {
+        hit = true;
+        console.log(`  ${INFO} Correct answer ${correctAnswer} → score +${scoreNow - scoreBefore2}`);
+      }
+    }
+  }
+  assert(hit, 'Typing correct answer increases score');
 
-  // 8. Game over flow — wait for asteroids to reach bottom (3 lives gone)
+  // 13. Game over flow
   console.log(`  ${INFO} Waiting for game over…`);
   const deadline = Date.now() + 90000;
   let goVisible = false;
@@ -123,27 +149,27 @@ console.log('\n\x1b[1m🖥  Desktop Chrome (1280×800)\x1b[0m');
   }
   assert(goVisible, 'Game over screen appears');
   if (goVisible) {
-    assert(await page.locator('#choices-panel').isHidden(), 'Choices hidden on game over');
-    assert(await page.locator('#final-score').isVisible(),  'Final score shown');
+    assert(await page.locator('#keypad-panel').isHidden(), 'Keypad hidden on game over');
+    assert(await page.locator('#final-score').isVisible(), 'Final score shown');
     const hi = await page.evaluate(() => localStorage.getItem('mathblast_hi'));
     assert(hi !== null, `High score in localStorage: ${hi}`);
   }
 
-  // 9. Play Again resets
+  // 14. Play Again resets
   await page.locator('#btn-replay').click();
   await page.waitForTimeout(500);
-  assert(await page.locator('#choices-panel').isVisible(), 'Choices panel back after Play Again');
+  assert(await page.locator('#keypad-panel').isVisible(), 'Keypad panel back after Play Again');
   const resetScore = await page.evaluate(() =>
     parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
   assert(resetScore === 0, 'Score resets to 0');
+  const resetDisp = await page.locator('#keypad-input').textContent();
+  assert(resetDisp === '–', `Display resets to '–' (got '${resetDisp}')`);
 
-  // 10. Back to menu
-  await page.locator('#btn-menu').click().catch(() => {});
-  // Manually show gameover to access btn-menu
+  // 15. Back to menu
   await page.evaluate(() => {
     document.getElementById('screen-gameover').classList.remove('hidden');
     document.getElementById('screen-hud').classList.add('hidden');
-    document.getElementById('choices-panel').classList.add('hidden');
+    document.getElementById('keypad-panel').classList.add('hidden');
   });
   await page.locator('#btn-menu').click();
   await page.waitForTimeout(400);
@@ -163,30 +189,40 @@ console.log('\n\x1b[1m📱 iPhone 14 (390×664)\x1b[0m');
   await page.waitForTimeout(600);
 
   await page.locator('.btn-diff.easy').tap();
-  await page.waitForTimeout(4700);
+  await page.waitForTimeout(500);
 
-  assert(await page.locator('#choices-panel').isVisible(), 'Choices panel visible');
-  assert(await page.locator('#answer').count() === 0,      'No text input — no keyboard ever opens');
+  assert(await page.locator('#keypad-panel').isVisible(), 'Keypad panel visible');
+  assert(await page.locator('#answer').count() === 0,     'No text input — no keyboard ever opens');
 
-  const btnH = await page.locator('.choice-btn').first().evaluate(el => el.offsetHeight);
-  assert(btnH >= 44, `Buttons ≥ 44px tall (got ${btnH}px) — thumb-tappable`);
+  const keyBtnH = await page.locator('.key-btn').first().evaluate(el => el.offsetHeight);
+  assert(keyBtnH >= 44, `Key buttons ≥ 44px tall (got ${keyBtnH}px) — thumb-tappable`);
 
-  const vals = await page.locator('.choice-btn').allTextContents();
-  assert(vals.every(t => t.trim() !== ''), 'All 4 buttons populated on mobile');
+  // Tap digit buttons
+  await page.locator('.key-btn[data-key="7"]').tap();
+  await page.locator('.key-btn[data-key="3"]').tap();
+  await page.waitForTimeout(100);
+  const mobileDisp = await page.locator('#keypad-input').textContent();
+  assert(mobileDisp === '73', `Mobile tap updates display (got '${mobileDisp}')`);
 
-  // Tap correct
-  const scoreBefore = await page.evaluate(() =>
+  // Tap backspace
+  await page.locator('.key-btn[data-key="⌫"]').tap();
+  await page.waitForTimeout(100);
+  const afterDelMobile = await page.locator('#keypad-input').textContent();
+  assert(afterDelMobile === '7', `Mobile ⌫ removes digit (got '${afterDelMobile}')`);
+
+  // Clear and wait for asteroid then test wrong answer score unchanged
+  await page.locator('.key-btn[data-key="⌫"]').tap();
+  await page.waitForTimeout(4200);
+  const scoreBeforeMob = await page.evaluate(() =>
     parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
-  let mobileHit = false;
-  for (const btn of await page.locator('.choice-btn').all()) {
-    const val = parseInt(await btn.getAttribute('data-value'));
-    await btn.tap();
-    await page.waitForTimeout(400);
-    const now = await page.evaluate(() =>
-      parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
-    if (now > scoreBefore) { mobileHit = true; console.log(`  ${INFO} Tapped correct: ${val}`); break; }
-  }
-  assert(mobileHit, 'Tapping correct choice works — no keyboard, no interruption');
+  await page.locator('.key-btn[data-key="9"]').tap();
+  await page.locator('.key-btn[data-key="9"]').tap();
+  await page.locator('.key-btn[data-key="9"]').tap();
+  await page.locator('.key-btn.key-enter').tap();
+  await page.waitForTimeout(300);
+  const scoreAfterMob = await page.evaluate(() =>
+    parseInt(document.getElementById('hud-score').textContent.replace('Score:', '').trim()));
+  assert(scoreAfterMob === scoreBeforeMob, 'Wrong answer does not change score on mobile');
 
   await browser.close();
 }
@@ -202,15 +238,22 @@ console.log('\n\x1b[1m📱 Moto G4 / Android (360×640)\x1b[0m');
   await page.waitForTimeout(600);
 
   await page.locator('.btn-diff.medium').tap();
-  await page.waitForTimeout(4000);
+  await page.waitForTimeout(500);
 
-  assert(await page.locator('#choices-panel').isVisible(), 'Choices panel visible');
-  assert(await page.locator('#answer').count() === 0,      'No text input on Android');
+  assert(await page.locator('#keypad-panel').isVisible(), 'Keypad panel visible on Android');
+  assert(await page.locator('#answer').count() === 0,     'No text input on Android');
 
-  const panelH = await page.locator('#choices-panel').evaluate(el => el.offsetHeight);
+  const panelH = await page.locator('#keypad-panel').evaluate(el => el.offsetHeight);
   const vpH    = await page.evaluate(() => window.innerHeight);
   const cH     = await page.evaluate(() => parseFloat(document.getElementById('gameCanvas').style.height));
   assert(Math.abs(cH + panelH - vpH) < 5, `Canvas + panel fits viewport (${cH.toFixed(0)}+${panelH}=${vpH})`);
+
+  // Tap a few keys
+  await page.locator('.key-btn[data-key="1"]').tap();
+  await page.locator('.key-btn[data-key="2"]').tap();
+  await page.waitForTimeout(100);
+  const droidDisp = await page.locator('#keypad-input').textContent();
+  assert(droidDisp === '12', `Android keypad tap works (got '${droidDisp}')`);
 
   await browser.close();
 }
