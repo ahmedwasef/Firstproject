@@ -5,19 +5,38 @@
 const canvas  = document.getElementById('gameCanvas');
 const ctx     = canvas.getContext('2d');
 
-// ── Resize canvas to fill viewport ──────────────────
+// ── Resize canvas — HiDPI/Retina aware ──────────────
 function resizeCanvas() {
-  canvas.width  = window.innerWidth;
-  canvas.height = window.innerHeight;
+  const vw = window.visualViewport ? window.visualViewport.width  : window.innerWidth;
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const dpr = window.devicePixelRatio || 1;
+  // Set CSS size
+  canvas.style.width  = vw + 'px';
+  canvas.style.height = vh + 'px';
+  // Set actual pixel buffer (sharp on Retina/HiDPI)
+  canvas.width  = Math.round(vw  * dpr);
+  canvas.height = Math.round(vh * dpr);
+  // Scale context so game coords stay in CSS pixels
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 resizeCanvas();
+
+// Re-render on orientation change, keyboard open/close
 window.addEventListener('resize', resizeCanvas);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', resizeCanvas);
+}
 
 // ── Prevent page scroll during play ─────────────────
 window.addEventListener('keydown', e => {
   if (['Space','ArrowUp','ArrowDown'].includes(e.code) && state.running)
     e.preventDefault();
 });
+
+// ── iOS AudioContext: must resume after user gesture ─
+document.addEventListener('touchstart', () => {
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}, { once: false, passive: true });
 
 // ══════════════════════════════════════════════════════
 //  AUDIO
@@ -145,7 +164,7 @@ class Asteroid {
   constructor(difficulty) {
     const cfg   = DIFFICULTY_CONFIG[difficulty];
     const pad   = 90;
-    this.x      = randomInt(pad, canvas.width - pad);
+    this.x      = randomInt(pad, cw() - pad);
     this.y      = -80;
     this.speed  = cfg.baseSpeed + (Math.random() - 0.5) * 0.5;
     this.size   = randomInt(50, 78);
@@ -203,7 +222,7 @@ class Asteroid {
     c.restore();
   }
 
-  isOffScreen() { return this.y - this.size > canvas.height; }
+  isOffScreen() { return this.y - this.size > ch(); }
 }
 
 function lighten(hex, pct) {
@@ -214,6 +233,10 @@ function lighten(hex, pct) {
   return `rgb(${r},${g},${b})`;
 }
 function darken(hex, pct) { return lighten(hex, -pct); }
+
+// ── CSS pixel dimensions (use these everywhere in game logic) ──
+function cw() { return parseFloat(canvas.style.width)  || canvas.width; }
+function ch() { return parseFloat(canvas.style.height) || canvas.height; }
 
 // ══════════════════════════════════════════════════════
 //  GAME STATE
@@ -292,7 +315,10 @@ function startGame(difficulty) {
   if (state.animFrameId) cancelAnimationFrame(state.animFrameId);
   gameLoop();
 
-  setTimeout(() => elAnswer.focus(), 50);
+  // Only auto-focus on desktop (on mobile, keyboard popup obscures the game)
+  if (!('ontouchstart' in window)) {
+    setTimeout(() => elAnswer.focus(), 50);
+  }
 }
 
 function startSpawnTimer() {
@@ -309,17 +335,18 @@ function spawnAsteroid() {
 // ══════════════════════════════════════════════════════
 //  INPUT
 // ══════════════════════════════════════════════════════
-elAnswer.addEventListener('keydown', e => {
-  if (e.key !== 'Enter') return;
+function submitAnswer() {
+  if (!state.running) return;
   const typed = parseInt(elAnswer.value.trim(), 10);
   elAnswer.value = '';
+  elAnswer.focus();
 
   if (isNaN(typed)) return;
 
   const idx = state.asteroids.findIndex(a => a.question.a === typed);
   if (idx !== -1) {
     const ast = state.asteroids[idx];
-    const pts = ast.y < canvas.height / 2 ? 15 : 10;
+    const pts = ast.y < ch() / 2 ? 15 : 10;
     state.score += pts;
     state.correctCount++;
     triggerExplosion(ast.x, ast.y, ast.color);
@@ -331,10 +358,25 @@ elAnswer.addEventListener('keydown', e => {
   } else {
     playMiss();
     elAnswer.classList.remove('shake');
-    void elAnswer.offsetWidth; // reflow to restart animation
+    void elAnswer.offsetWidth;
     elAnswer.classList.add('shake');
     setTimeout(() => elAnswer.classList.remove('shake'), 400);
   }
+}
+
+// Keyboard Enter (desktop + hardware keyboards)
+elAnswer.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); submitAnswer(); }
+});
+
+// Mobile "Go / Done" button (fires as enterkeyhint="go" action on some keyboards)
+elAnswer.addEventListener('search', submitAnswer);
+
+// Submit button tap (mobile)
+document.getElementById('btn-submit').addEventListener('click', submitAnswer);
+document.getElementById('btn-submit').addEventListener('touchend', e => {
+  e.preventDefault(); // prevent ghost click
+  submitAnswer();
 });
 
 function increaseSpeed() {
@@ -370,20 +412,18 @@ function updateHUD() {
 //  GAME LOOP
 // ══════════════════════════════════════════════════════
 function drawBackground() {
-  const bg = ctx.createRadialGradient(
-    canvas.width / 2, canvas.height / 2, 0,
-    canvas.width / 2, canvas.height / 2, Math.max(canvas.width, canvas.height)
-  );
+  const w = cw(), h = ch();
+  const bg = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h));
   bg.addColorStop(0, `hsl(${state.bgHue}, 60%, 8%)`);
   bg.addColorStop(1, `hsl(${state.bgHue}, 80%, 2%)`);
   ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, w, h);
 }
 
 function gameLoop() {
   if (!state.running) return;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, cw(), ch());
   drawBackground();
 
   // Asteroids
@@ -401,7 +441,7 @@ function gameLoop() {
     state.lives--;
     playMissLife();
     updateHUD();
-    state.floatingTexts.push(new FloatingText('-1 ♥', a.x, canvas.height - 60, '#e74c3c'));
+    state.floatingTexts.push(new FloatingText('-1 ♥', a.x, ch() - 80, '#e74c3c'));
   });
 
   // Particles

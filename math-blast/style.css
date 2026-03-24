@@ -7,13 +7,22 @@ body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #fff;
   user-select: none;
+  /* Prevent iOS bounce scroll */
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  /* Prevent text size adjustment on orientation change */
+  -webkit-text-size-adjust: 100%;
 }
 
 canvas {
   display: block;
   position: fixed;
   top: 0; left: 0;
-  width: 100vw; height: 100vh;
+  width: 100%;
+  height: 100%;
+  /* Prevent touch scroll/zoom on canvas */
+  touch-action: none;
 }
 
 .hidden { display: none !important; }
@@ -104,6 +113,10 @@ canvas {
   line-height: 1.5;
   text-align: center;
   min-width: 140px;
+  /* Remove 300ms tap delay on Android/iOS */
+  touch-action: manipulation;
+  /* Prevent tap highlight flash */
+  -webkit-tap-highlight-color: transparent;
 }
 
 .btn-diff small { font-weight: 400; font-size: 0.78rem; opacity: 0.85; }
@@ -153,31 +166,55 @@ canvas {
    ANSWER INPUT
 ══════════════════════════════════ */
 #input-wrap {
-  bottom: 2rem;
+  bottom: env(safe-area-inset-bottom, 1.5rem);
+  bottom: max(env(safe-area-inset-bottom, 0px) + 0.5rem, 1.5rem);
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 #answer {
-  width: 160px;
+  width: 140px;
   padding: 0.75rem 1rem;
-  font-size: 1.8rem;
+  /* 16px minimum prevents iOS auto-zoom on focus */
+  font-size: max(1.6rem, 16px);
   font-weight: 700;
   text-align: center;
   border: 3px solid #0ff;
   border-radius: 50px;
-  background: rgba(5, 5, 32, 0.85);
+  background: rgba(5, 5, 32, 0.9);
   color: #fff;
   outline: none;
   caret-color: #0ff;
-  box-shadow: 0 0 18px #0ff55;
-  /* hide number spinners */
-  -moz-appearance: textfield;
+  box-shadow: 0 0 18px rgba(0,255,255,0.3);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
-#answer::-webkit-outer-spin-button,
-#answer::-webkit-inner-spin-button { -webkit-appearance: none; }
 
-#answer:focus { border-color: #f9ca24; box-shadow: 0 0 22px #f9ca2466; }
+#answer:focus { border-color: #f9ca24; box-shadow: 0 0 22px rgba(249,202,36,0.4); }
+
+/* Submit button (mobile tap to confirm) */
+#btn-submit {
+  width: 54px;
+  height: 54px;
+  border: none;
+  border-radius: 50%;
+  background: #0ff;
+  color: #050520;
+  font-size: 1.5rem;
+  font-weight: 900;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 0 16px rgba(0,255,255,0.5);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#btn-submit:active { transform: scale(0.92); background: #f9ca24; }
 
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
@@ -212,13 +249,16 @@ canvas {
 #new-record  { font-size: 1.2rem; color: #f9ca24; text-shadow: 0 0 12px #f9ca24; }
 
 #screen-gameover button {
-  padding: 0.75rem 2rem;
+  padding: 0.85rem 2.2rem;
   border: none;
   border-radius: 30px;
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  min-width: 160px;
 }
 #screen-gameover button:hover { transform: scale(1.07); }
 
@@ -226,10 +266,33 @@ canvas {
 #btn-menu   { background: #555;    color: #fff; }
 
 /* ══════════════════════════════════
-   RESPONSIVE
+   RESPONSIVE — MOBILE
 ══════════════════════════════════ */
 @media (max-width: 600px) {
-  .difficulty-buttons { flex-direction: column; align-items: center; }
-  .btn-diff { width: 220px; }
-  #answer   { width: 130px; font-size: 1.5rem; }
+  #screen-menu { gap: 1rem; padding: 1rem; }
+  #screen-menu h1 { font-size: clamp(2rem, 10vw, 3rem); }
+  .subtitle { font-size: 0.95rem; text-align: center; padding: 0 1rem; }
+  .difficulty-buttons { flex-direction: column; align-items: center; width: 100%; }
+  .btn-diff { width: 85vw; max-width: 300px; font-size: 1rem; padding: 0.9rem 1rem; }
+
+  #screen-hud { padding: 0.6rem 0.8rem; font-size: 0.9rem; }
+  #hud-lives  { font-size: 1.1rem; letter-spacing: 2px; }
+
+  #answer { width: 120px; }
+  #btn-submit { width: 50px; height: 50px; font-size: 1.3rem; }
+
+  #screen-gameover h2    { font-size: clamp(1.8rem, 8vw, 3rem); }
+  #screen-gameover button { width: 80vw; max-width: 280px; }
+}
+
+/* iPhone notch / safe areas */
+@supports (padding: max(0px)) {
+  #screen-hud {
+    padding-top: max(0.6rem, env(safe-area-inset-top));
+    padding-left: max(0.8rem, env(safe-area-inset-left));
+    padding-right: max(0.8rem, env(safe-area-inset-right));
+  }
+  #input-wrap {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
 }

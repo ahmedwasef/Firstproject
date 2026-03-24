@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Math Blast</title>
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -20,7 +23,7 @@
       <button class="btn-diff hard"   data-diff="hard">Hard<br><small>Ages 11–12 · × and ÷</small></button>
     </div>
     <p id="menu-highscore">Best Score: 0</p>
-    <p class="how-to">Type the answer and press <kbd>Enter</kbd> to destroy an asteroid</p>
+    <p class="how-to">Type the answer and tap <kbd>✓</kbd> or press <kbd>Enter</kbd></p>
   </div>
 
   <!-- HUD -->
@@ -32,7 +35,10 @@
 
   <!-- ANSWER INPUT -->
   <div id="input-wrap" class="hidden">
-    <input id="answer" type="number" placeholder="?" autocomplete="off" />
+    <input id="answer" type="text" inputmode="numeric" pattern="[0-9]*"
+           placeholder="?" autocomplete="off" autocorrect="off"
+           autocapitalize="off" spellcheck="false" enterkeyhint="go" />
+    <button id="btn-submit" aria-label="Submit answer">✓</button>
   </div>
 
   <!-- GAME OVER -->
