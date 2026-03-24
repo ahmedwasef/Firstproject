@@ -7,11 +7,8 @@ body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #fff;
   user-select: none;
-  /* Prevent iOS bounce scroll */
   position: fixed;
-  width: 100%;
-  height: 100%;
-  /* Prevent text size adjustment on orientation change */
+  width: 100%; height: 100%;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -19,19 +16,13 @@ canvas {
   display: block;
   position: fixed;
   top: 0; left: 0;
-  width: 100%;
-  height: 100%;
-  /* Prevent touch scroll/zoom on canvas */
   touch-action: none;
 }
 
 .hidden { display: none !important; }
 
 /* ── Shared overlay base ── */
-#screen-menu,
-#screen-hud,
-#screen-gameover,
-#input-wrap {
+#screen-menu, #screen-hud, #screen-gameover, #choices-panel {
   position: fixed;
   z-index: 10;
 }
@@ -49,7 +40,6 @@ canvas {
   background: radial-gradient(ellipse at center, #0d0d2b 0%, #000 80%);
 }
 
-/* Starfield */
 #screen-menu::before {
   content: '';
   position: fixed;
@@ -90,10 +80,7 @@ canvas {
   50%       { text-shadow: 0 0 20px #ff0, 0 0 50px #ff0, 0 0 6px #fff; }
 }
 
-.subtitle {
-  color: #aaa;
-  font-size: 1.1rem;
-}
+.subtitle { color: #aaa; font-size: 1rem; text-align: center; padding: 0 1rem; }
 
 .difficulty-buttons {
   display: flex;
@@ -113,35 +100,16 @@ canvas {
   line-height: 1.5;
   text-align: center;
   min-width: 140px;
-  /* Remove 300ms tap delay on Android/iOS */
   touch-action: manipulation;
-  /* Prevent tap highlight flash */
   -webkit-tap-highlight-color: transparent;
 }
-
 .btn-diff small { font-weight: 400; font-size: 0.78rem; opacity: 0.85; }
-
-.btn-diff:hover { transform: scale(1.08); }
-
+.btn-diff:hover  { transform: scale(1.08); }
 .btn-diff.easy   { background: #27ae60; color: #fff; box-shadow: 0 4px 20px #27ae6077; }
 .btn-diff.medium { background: #e67e22; color: #fff; box-shadow: 0 4px 20px #e67e2277; }
 .btn-diff.hard   { background: #e74c3c; color: #fff; box-shadow: 0 4px 20px #e74c3c77; }
 
-#menu-highscore {
-  color: #f9ca24;
-  font-size: 1rem;
-  letter-spacing: 1px;
-}
-
-.how-to { color: #666; font-size: 0.85rem; }
-.how-to kbd {
-  background: #222;
-  border: 1px solid #555;
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 0.85rem;
-  color: #ccc;
-}
+#menu-highscore { color: #f9ca24; font-size: 1rem; letter-spacing: 1px; }
 
 /* ══════════════════════════════════
    HUD
@@ -152,80 +120,69 @@ canvas {
   justify-content: space-between;
   align-items: center;
   padding: 0.8rem 1.4rem;
-  background: rgba(5, 5, 32, 0.75);
+  background: rgba(5, 5, 32, 0.82);
   backdrop-filter: blur(6px);
   font-size: 1.1rem;
   font-weight: 600;
 }
-
 #hud-score { color: #0ff; }
 #hud-level { color: #f9ca24; }
 #hud-lives { color: #e74c3c; letter-spacing: 4px; font-size: 1.3rem; }
 
 /* ══════════════════════════════════
-   ANSWER INPUT
+   ANSWER CHOICES PANEL
 ══════════════════════════════════ */
-#input-wrap {
-  /* Desktop: pinned to bottom; mobile: overridden by JS (visualViewport) */
-  bottom: max(env(safe-area-inset-bottom, 0px) + 0.5rem, 1.5rem);
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  /* Smooth slide when keyboard opens/closes */
-  transition: top 0.15s ease;
+#choices-panel {
+  bottom: 0; left: 0; right: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 10px 12px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom, 10px));
+  background: rgba(5, 5, 32, 0.88);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid rgba(0,255,255,0.15);
 }
 
-#answer {
-  width: 140px;
-  padding: 0.75rem 1rem;
-  /* 16px minimum prevents iOS auto-zoom on focus */
-  font-size: max(1.6rem, 16px);
-  font-weight: 700;
-  text-align: center;
-  border: 3px solid #0ff;
-  border-radius: 50px;
-  background: rgba(5, 5, 32, 0.9);
+.choice-btn {
+  padding: 0;
+  height: 64px;
+  border: 2px solid rgba(0,255,255,0.3);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.06);
   color: #fff;
-  outline: none;
-  caret-color: #0ff;
-  box-shadow: 0 0 18px rgba(0,255,255,0.3);
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-
-#answer:focus { border-color: #f9ca24; box-shadow: 0 0 22px rgba(249,202,36,0.4); }
-
-/* Submit button (mobile tap to confirm) */
-#btn-submit {
-  width: 54px;
-  height: 54px;
-  border: none;
-  border-radius: 50%;
-  background: #0ff;
-  color: #050520;
-  font-size: 1.5rem;
-  font-weight: 900;
+  font-size: 1.7rem;
+  font-weight: 800;
   cursor: pointer;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  box-shadow: 0 0 16px rgba(0,255,255,0.5);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  transition: background 0.12s, transform 0.1s, border-color 0.12s;
+  letter-spacing: 1px;
 }
-#btn-submit:active { transform: scale(0.92); background: #f9ca24; }
+
+.choice-btn:hover  { background: rgba(0,255,255,0.15); border-color: #0ff; }
+.choice-btn:active { transform: scale(0.93); background: rgba(0,255,255,0.25); }
+
+/* Correct flash */
+.choice-btn.flash-correct {
+  background: #27ae60;
+  border-color: #27ae60;
+  transform: scale(1.06);
+}
+/* Wrong flash */
+.choice-btn.flash-wrong {
+  background: #e74c3c;
+  border-color: #e74c3c;
+  animation: shake 0.35s ease;
+}
 
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
-  20%       { transform: translateX(-10px); }
-  40%       { transform: translateX(10px); }
-  60%       { transform: translateX(-8px); }
-  80%       { transform: translateX(8px); }
+  20%       { transform: translateX(-8px); }
+  40%       { transform: translateX(8px); }
+  60%       { transform: translateX(-6px); }
+  80%       { transform: translateX(6px); }
 }
-.shake { animation: shake 0.35s ease; }
 
 /* ══════════════════════════════════
    GAME OVER
@@ -237,16 +194,14 @@ canvas {
   align-items: center;
   justify-content: center;
   gap: 1.2rem;
-  background: rgba(5, 5, 32, 0.9);
+  background: rgba(5, 5, 32, 0.92);
   backdrop-filter: blur(8px);
 }
-
 #screen-gameover h2 {
   font-size: clamp(2rem, 6vw, 4rem);
   color: #e74c3c;
   text-shadow: 0 0 20px #e74c3c;
 }
-
 #final-score { font-size: 1.4rem; color: #0ff; }
 #new-record  { font-size: 1.2rem; color: #f9ca24; text-shadow: 0 0 12px #f9ca24; }
 
@@ -257,13 +212,12 @@ canvas {
   font-size: 1rem;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.2s;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
-  min-width: 160px;
+  min-width: 180px;
 }
 #screen-gameover button:hover { transform: scale(1.07); }
-
 #btn-replay { background: #27ae60; color: #fff; box-shadow: 0 4px 16px #27ae6077; }
 #btn-menu   { background: #555;    color: #fff; }
 
@@ -271,30 +225,24 @@ canvas {
    RESPONSIVE — MOBILE
 ══════════════════════════════════ */
 @media (max-width: 600px) {
-  #screen-menu { gap: 1rem; padding: 1rem; }
+  #screen-menu    { gap: 1rem; padding: 1rem; }
   #screen-menu h1 { font-size: clamp(2rem, 10vw, 3rem); }
-  .subtitle { font-size: 0.95rem; text-align: center; padding: 0 1rem; }
-  .difficulty-buttons { flex-direction: column; align-items: center; width: 100%; }
-  .btn-diff { width: 85vw; max-width: 300px; font-size: 1rem; padding: 0.9rem 1rem; }
+  .difficulty-buttons  { flex-direction: column; align-items: center; width: 100%; }
+  .btn-diff { width: 85vw; max-width: 300px; }
 
-  #screen-hud { padding: 0.6rem 0.8rem; font-size: 0.9rem; }
-  #hud-lives  { font-size: 1.1rem; letter-spacing: 2px; }
+  #screen-hud  { padding: 0.55rem 0.8rem; font-size: 0.9rem; }
+  #hud-lives   { font-size: 1.1rem; letter-spacing: 2px; }
 
-  #answer { width: 120px; }
-  #btn-submit { width: 50px; height: 50px; font-size: 1.3rem; }
+  .choice-btn  { height: 70px; font-size: 1.9rem; }
 
-  #screen-gameover h2    { font-size: clamp(1.8rem, 8vw, 3rem); }
   #screen-gameover button { width: 80vw; max-width: 280px; }
 }
 
-/* iPhone notch / safe areas */
+/* iPhone notch safe areas */
 @supports (padding: max(0px)) {
   #screen-hud {
-    padding-top: max(0.6rem, env(safe-area-inset-top));
-    padding-left: max(0.8rem, env(safe-area-inset-left));
+    padding-top:   max(0.6rem, env(safe-area-inset-top));
+    padding-left:  max(0.8rem, env(safe-area-inset-left));
     padding-right: max(0.8rem, env(safe-area-inset-right));
-  }
-  #input-wrap {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }

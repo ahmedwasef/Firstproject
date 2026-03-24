@@ -2,59 +2,48 @@
 //  Math Blast — Game Engine
 // ══════════════════════════════════════════════════════
 
-const canvas  = document.getElementById('gameCanvas');
-const ctx     = canvas.getContext('2d');
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
 
-// ── Mobile detection ────────────────────────────────
 const IS_MOBILE = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
-// ── Resize canvas + reposition input above keyboard ─
-// Uses visualViewport so iOS keyboard is handled correctly
+// ── Choices panel height (reserved at bottom) ────────
+const PANEL_H = () => document.getElementById('choices-panel').offsetHeight || 160;
+
+// ── Resize canvas to fill area ABOVE the choices panel ──
 function resizeCanvas() {
-  const vv  = window.visualViewport;
-  const vw  = vv ? vv.width  : window.innerWidth;
-  const vh  = vv ? vv.height : window.innerHeight;
-  const top = vv ? vv.offsetTop : 0;
+  const vw  = window.innerWidth;
+  const vh  = window.innerHeight;
   const dpr = window.devicePixelRatio || 1;
+  const ph  = PANEL_H();
 
-  // Position canvas inside visible area (above keyboard on iOS)
-  canvas.style.top    = top + 'px';
+  canvas.style.left   = '0px';
+  canvas.style.top    = '0px';
   canvas.style.width  = vw + 'px';
-  canvas.style.height = vh + 'px';
+  canvas.style.height = (vh - ph) + 'px';
 
-  // HiDPI pixel buffer
-  canvas.width  = Math.round(vw * dpr);
-  canvas.height = Math.round(vh * dpr);
+  canvas.width  = Math.round(vw       * dpr);
+  canvas.height = Math.round((vh - ph) * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  // Keep input-wrap just above keyboard (JS-positioned on mobile)
-  if (IS_MOBILE && elInputWrap) {
-    elInputWrap.style.position = 'fixed';
-    elInputWrap.style.bottom   = 'auto';
-    elInputWrap.style.top      = (top + vh - 80) + 'px';
-    elInputWrap.style.left     = '50%';
-    elInputWrap.style.transform = 'translateX(-50%)';
-  }
 }
 resizeCanvas();
-
-// Re-render on orientation change and when keyboard opens/closes
 window.addEventListener('resize', resizeCanvas);
-if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize',  resizeCanvas);
-  window.visualViewport.addEventListener('scroll',  resizeCanvas);
-}
+window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 300));
 
-// ── Prevent page scroll during play ─────────────────
+// CSS-pixel game dimensions
+function cw() { return parseFloat(canvas.style.width)  || canvas.width; }
+function ch() { return parseFloat(canvas.style.height) || canvas.height; }
+
+// ── Prevent page scroll ──────────────────────────────
 window.addEventListener('keydown', e => {
   if (['Space','ArrowUp','ArrowDown'].includes(e.code) && state.running)
     e.preventDefault();
 });
 
-// ── iOS AudioContext: must resume after user gesture ─
+// ── iOS AudioContext resume ──────────────────────────
 document.addEventListener('touchstart', () => {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-}, { once: false, passive: true });
+}, { passive: true });
 
 // ══════════════════════════════════════════════════════
 //  AUDIO
@@ -64,24 +53,20 @@ function getAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return audioCtx;
 }
-
 function playTone(type, freqStart, freqEnd, duration, volume = 0.3) {
   try {
-    const ctx2 = getAudio();
-    const osc  = ctx2.createOscillator();
-    const gain = ctx2.createGain();
-    osc.connect(gain);
-    gain.connect(ctx2.destination);
+    const ac   = getAudio();
+    const osc  = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain); gain.connect(ac.destination);
     osc.type = type;
-    osc.frequency.setValueAtTime(freqStart, ctx2.currentTime);
-    osc.frequency.linearRampToValueAtTime(freqEnd, ctx2.currentTime + duration);
-    gain.gain.setValueAtTime(volume, ctx2.currentTime);
-    gain.gain.linearRampToValueAtTime(0, ctx2.currentTime + duration);
-    osc.start();
-    osc.stop(ctx2.currentTime + duration);
-  } catch(e) { /* silently ignore audio errors */ }
+    osc.frequency.setValueAtTime(freqStart, ac.currentTime);
+    osc.frequency.linearRampToValueAtTime(freqEnd, ac.currentTime + duration);
+    gain.gain.setValueAtTime(volume, ac.currentTime);
+    gain.gain.linearRampToValueAtTime(0, ac.currentTime + duration);
+    osc.start(); osc.stop(ac.currentTime + duration);
+  } catch(e) {}
 }
-
 const playSuccess  = () => playTone('sine',     300, 700, 0.18, 0.25);
 const playMiss     = () => playTone('triangle', 200, 100, 0.22, 0.2);
 const playGameOver = () => playTone('sawtooth', 500, 80,  0.9,  0.3);
@@ -105,20 +90,58 @@ function generateQuestion(difficulty) {
     if (op === '-' && b > a) [a, b] = [b, a];
     return { q: `${a} ${op} ${b}`, a: op === '+' ? a + b : a - b };
   }
-  // hard
   const op = Math.random() < 0.5 ? '×' : '÷';
   if (op === '×') {
     const a = randomInt(2, 12), b = randomInt(2, 12);
     return { q: `${a} × ${b}`, a: a * b };
   } else {
     const result = randomInt(2, 12), b = randomInt(2, 12);
-    const a = result * b;
-    return { q: `${a} ÷ ${b}`, a: result };
+    return { q: `${result * b} ÷ ${b}`, a: result };
   }
 }
 
 // ══════════════════════════════════════════════════════
-//  PARTICLE
+//  CHOICES
+// ══════════════════════════════════════════════════════
+// Build 4 choices: all correct answers from current asteroids
+// padded with plausible wrong numbers, then shuffled.
+function buildChoices(asteroids) {
+  const correct = asteroids.map(a => a.question.a);
+  const pool = new Set(correct);
+
+  // Generate wrong distractors close to correct answers
+  while (pool.size < 4) {
+    const base = correct[randomInt(0, correct.length - 1)];
+    const offset = randomInt(1, 5) * (Math.random() < 0.5 ? 1 : -1);
+    const wrong = Math.max(0, base + offset);
+    pool.add(wrong);
+  }
+
+  // Shuffle
+  return [...pool].sort(() => Math.random() - 0.5);
+}
+
+function renderChoices(choices) {
+  const btns = document.querySelectorAll('.choice-btn');
+  btns.forEach((btn, i) => {
+    btn.textContent = choices[i] !== undefined ? choices[i] : '–';
+    btn.dataset.value = choices[i] !== undefined ? choices[i] : '';
+    btn.disabled = choices[i] === undefined;
+    btn.classList.remove('flash-correct', 'flash-wrong');
+  });
+}
+
+function refreshChoices() {
+  if (!state.running || state.asteroids.length === 0) {
+    renderChoices([]);
+    return;
+  }
+  state.currentChoices = buildChoices(state.asteroids);
+  renderChoices(state.currentChoices);
+}
+
+// ══════════════════════════════════════════════════════
+//  PARTICLES & FLOATING TEXT
 // ══════════════════════════════════════════════════════
 class Particle {
   constructor(x, y, color) {
@@ -134,24 +157,16 @@ class Particle {
     c.save();
     c.globalAlpha = Math.max(0, this.alpha);
     c.fillStyle = this.color;
-    c.beginPath();
-    c.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    c.fill();
+    c.beginPath(); c.arc(this.x, this.y, this.radius, 0, Math.PI * 2); c.fill();
     c.restore();
   }
   isDead() { return this.alpha <= 0; }
 }
 
-// ══════════════════════════════════════════════════════
-//  FLOATING TEXT
-// ══════════════════════════════════════════════════════
 class FloatingText {
   constructor(text, x, y, color = '#f9ca24') {
-    this.text  = text;
-    this.x = x; this.y = y;
-    this.alpha = 1;
-    this.frame = 0;
-    this.color = color;
+    this.text = text; this.x = x; this.y = y;
+    this.alpha = 1; this.frame = 0; this.color = color;
   }
   update() { this.y -= 1.8; this.frame++; this.alpha = 1 - this.frame / 55; }
   draw(c) {
@@ -169,142 +184,93 @@ class FloatingText {
 // ══════════════════════════════════════════════════════
 //  ASTEROID
 // ══════════════════════════════════════════════════════
-// Desktop config / Mobile config (slower, fewer, bigger)
 const DIFFICULTY_CONFIG = {
-  easy:   {
-    baseSpeed: IS_MOBILE ? 0.45 : 0.7,
-    spawnMs:   IS_MOBILE ? 4500 : 3000,  minSpawnMs: IS_MOBILE ? 2000 : 1200,
-    maxAsteroids: IS_MOBILE ? 2 : 6,
-  },
-  medium: {
-    baseSpeed: IS_MOBILE ? 0.85 : 1.3,
-    spawnMs:   IS_MOBILE ? 3500 : 2200,  minSpawnMs: IS_MOBILE ? 1500 : 1000,
-    maxAsteroids: IS_MOBILE ? 3 : 6,
-  },
-  hard:   {
-    baseSpeed: IS_MOBILE ? 1.4  : 2.1,
-    spawnMs:   IS_MOBILE ? 2500 : 1500,  minSpawnMs: IS_MOBILE ? 1200 : 800,
-    maxAsteroids: IS_MOBILE ? 3 : 6,
-  },
+  easy:   { baseSpeed: IS_MOBILE ? 0.45 : 0.7,  spawnMs: IS_MOBILE ? 4500 : 3000, minSpawnMs: IS_MOBILE ? 2000 : 1200, maxAsteroids: IS_MOBILE ? 2 : 5 },
+  medium: { baseSpeed: IS_MOBILE ? 0.85 : 1.3,  spawnMs: IS_MOBILE ? 3500 : 2200, minSpawnMs: IS_MOBILE ? 1500 : 1000, maxAsteroids: IS_MOBILE ? 3 : 5 },
+  hard:   { baseSpeed: IS_MOBILE ? 1.4  : 2.1,  spawnMs: IS_MOBILE ? 2500 : 1500, minSpawnMs: IS_MOBILE ? 1200 : 800,  maxAsteroids: IS_MOBILE ? 3 : 5 },
 };
 
-const ROCK_COLORS  = ['#a0522d', '#8b4513', '#cd853f', '#b8860b'];
-const OP_COLORS    = { '+': '#27ae6099', '-': '#2980b999', '×': '#e67e2299', '÷': '#e74c3c99' };
+const ROCK_COLORS = ['#a0522d', '#8b4513', '#cd853f', '#b8860b'];
 
 class Asteroid {
   constructor(difficulty) {
-    const cfg   = DIFFICULTY_CONFIG[difficulty];
-    // Larger rocks on mobile so equations are readable
     const minSize = IS_MOBILE ? 68 : 50;
-    const maxSize = IS_MOBILE ? 92 : 78;
-    const pad   = IS_MOBILE ? 70 : 90;
-    this.x      = randomInt(pad, cw() - pad);
-    this.y      = -80;
-    this.speed  = cfg.baseSpeed + (Math.random() - 0.5) * 0.3;
-    this.size   = randomInt(minSize, maxSize);
-    this.color  = ROCK_COLORS[randomInt(0, ROCK_COLORS.length - 1)];
+    const maxSize = IS_MOBILE ? 90 : 76;
+    const pad     = IS_MOBILE ? 70 : 90;
+    this.x        = randomInt(pad, cw() - pad);
+    this.y        = -80;
+    this.speed    = DIFFICULTY_CONFIG[difficulty].baseSpeed + (Math.random() - 0.5) * 0.3;
+    this.size     = randomInt(minSize, maxSize);
+    this.color    = ROCK_COLORS[randomInt(0, ROCK_COLORS.length - 1)];
     this.question = generateQuestion(difficulty);
-    // Pre-compute jitter for irregular polygon
-    this.jitter = Array.from({length: 9}, () => Math.random() * 0.38 + 0.72);
-    this.angle  = Math.random() * Math.PI * 2;
+    this.jitter   = Array.from({length: 9}, () => Math.random() * 0.38 + 0.72);
+    this.angle    = Math.random() * Math.PI * 2;
     this.rotSpeed = (Math.random() - 0.5) * 0.012;
   }
-
-  update() {
-    this.y += this.speed;
-    this.angle += this.rotSpeed;
-  }
-
+  update() { this.y += this.speed; this.angle += this.rotSpeed; }
   draw(c) {
     const pts = 9;
     c.save();
     c.translate(this.x, this.y);
     c.rotate(this.angle);
 
-    // Rock shape
     c.beginPath();
     for (let i = 0; i < pts; i++) {
       const theta = (i / pts) * Math.PI * 2;
       const r = this.size * this.jitter[i];
-      const px = Math.cos(theta) * r;
-      const py = Math.sin(theta) * r;
-      i === 0 ? c.moveTo(px, py) : c.lineTo(px, py);
+      i === 0 ? c.moveTo(Math.cos(theta)*r, Math.sin(theta)*r)
+              : c.lineTo(Math.cos(theta)*r, Math.sin(theta)*r);
     }
     c.closePath();
 
-    // Fill with gradient
-    const grad = c.createRadialGradient(0, -this.size * 0.3, 0, 0, 0, this.size);
+    const grad = c.createRadialGradient(0, -this.size*0.3, 0, 0, 0, this.size);
     grad.addColorStop(0, lighten(this.color, 40));
     grad.addColorStop(1, darken(this.color, 30));
-    c.fillStyle = grad;
-    c.fill();
-    c.strokeStyle = '#222';
-    c.lineWidth = 2;
-    c.stroke();
+    c.fillStyle = grad; c.fill();
+    c.strokeStyle = '#222'; c.lineWidth = 2; c.stroke();
 
-    // Question text — larger on mobile for readability
-    const fontBase = IS_MOBILE ? 0.48 : 0.38;
-    const fontMin  = IS_MOBILE ? 18   : 14;
-    const fontMax  = IS_MOBILE ? 32   : 22;
-    const fontSize = Math.max(fontMin, Math.min(fontMax, this.size * fontBase));
+    const fontMax  = IS_MOBILE ? 30 : 22;
+    const fontMin  = IS_MOBILE ? 18 : 14;
+    const fontSize = Math.max(fontMin, Math.min(fontMax, this.size * (IS_MOBILE ? 0.46 : 0.38)));
     c.font = `bold ${fontSize}px Segoe UI, sans-serif`;
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.fillStyle = '#fff';
-    c.shadowColor = '#000';
-    c.shadowBlur = 6;
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = '#fff'; c.shadowColor = '#000'; c.shadowBlur = 6;
     c.fillText(this.question.q, 0, 0);
     c.shadowBlur = 0;
-
     c.restore();
   }
-
   isOffScreen() { return this.y - this.size > ch(); }
 }
 
 function lighten(hex, pct) {
   const n = parseInt(hex.slice(1), 16);
-  const r = Math.min(255, (n >> 16) + pct);
-  const g = Math.min(255, ((n >> 8) & 0xff) + pct);
-  const b = Math.min(255, (n & 0xff) + pct);
-  return `rgb(${r},${g},${b})`;
+  return `rgb(${Math.min(255,(n>>16)+pct)},${Math.min(255,((n>>8)&0xff)+pct)},${Math.min(255,(n&0xff)+pct)})`;
 }
 function darken(hex, pct) { return lighten(hex, -pct); }
-
-// ── CSS pixel dimensions (use these everywhere in game logic) ──
-function cw() { return parseFloat(canvas.style.width)  || canvas.width; }
-function ch() { return parseFloat(canvas.style.height) || canvas.height; }
 
 // ══════════════════════════════════════════════════════
 //  GAME STATE
 // ══════════════════════════════════════════════════════
 const state = {
-  running:       false,
-  difficulty:    'easy',
-  score:         0,
-  lives:         3,
-  correctCount:  0,
-  asteroids:     [],
-  particles:     [],
-  floatingTexts: [],
-  spawnInterval: null,
-  animFrameId:   null,
-  currentSpawnMs: 3000,
-  bgHue:         230,
+  running: false, difficulty: 'easy',
+  score: 0, lives: 3, correctCount: 0,
+  asteroids: [], particles: [], floatingTexts: [],
+  spawnInterval: null, animFrameId: null,
+  currentSpawnMs: 3000, bgHue: 230,
+  currentChoices: [],
 };
 
 // ── DOM refs ─────────────────────────────────────────
-const elMenu      = document.getElementById('screen-menu');
-const elHud       = document.getElementById('screen-hud');
-const elGameOver  = document.getElementById('screen-gameover');
-const elInputWrap = document.getElementById('input-wrap');
-const elAnswer    = document.getElementById('answer');
-const elScore     = document.getElementById('hud-score');
-const elLevel     = document.getElementById('hud-level');
-const elLives     = document.getElementById('hud-lives');
-const elFinalScore= document.getElementById('final-score');
-const elNewRecord = document.getElementById('new-record');
-const elHighScore = document.getElementById('menu-highscore');
+const elMenu       = document.getElementById('screen-menu');
+const elHud        = document.getElementById('screen-hud');
+const elGameOver   = document.getElementById('screen-gameover');
+const elChoices    = document.getElementById('choices-panel');
+const elScore      = document.getElementById('hud-score');
+const elLevel      = document.getElementById('hud-level');
+const elLives      = document.getElementById('hud-lives');
+const elFinalScore = document.getElementById('final-score');
+const elNewRecord  = document.getElementById('new-record');
+const elHighScore  = document.getElementById('menu-highscore');
 
 // ══════════════════════════════════════════════════════
 //  MENU
@@ -312,15 +278,14 @@ const elHighScore = document.getElementById('menu-highscore');
 function initMenu() {
   elMenu.classList.remove('hidden');
   elHud.classList.add('hidden');
-  elInputWrap.classList.add('hidden');
+  elChoices.classList.add('hidden');
   elGameOver.classList.add('hidden');
-  const best = localStorage.getItem('mathblast_hi') || 0;
-  elHighScore.textContent = `Best Score: ${best}`;
+  elHighScore.textContent = `Best Score: ${localStorage.getItem('mathblast_hi') || 0}`;
 }
 
-document.querySelectorAll('.btn-diff').forEach(btn => {
-  btn.addEventListener('click', () => startGame(btn.dataset.diff));
-});
+document.querySelectorAll('.btn-diff').forEach(btn =>
+  btn.addEventListener('click', () => startGame(btn.dataset.diff))
+);
 document.getElementById('btn-replay').addEventListener('click', () => startGame(state.difficulty));
 document.getElementById('btn-menu').addEventListener('click', initMenu);
 
@@ -328,34 +293,26 @@ document.getElementById('btn-menu').addEventListener('click', initMenu);
 //  START GAME
 // ══════════════════════════════════════════════════════
 function startGame(difficulty) {
-  state.difficulty    = difficulty;
-  state.score         = 0;
-  state.lives         = 3;
-  state.correctCount  = 0;
-  state.asteroids     = [];
-  state.particles     = [];
-  state.floatingTexts = [];
-  state.running       = true;
-  state.bgHue         = 230;
-  const cfg = DIFFICULTY_CONFIG[difficulty];
-  state.currentSpawnMs = cfg.spawnMs;
+  Object.assign(state, {
+    difficulty, score: 0, lives: 3, correctCount: 0,
+    asteroids: [], particles: [], floatingTexts: [],
+    running: true, bgHue: 230,
+    currentSpawnMs: DIFFICULTY_CONFIG[difficulty].spawnMs,
+    currentChoices: [],
+  });
 
   elMenu.classList.add('hidden');
   elGameOver.classList.add('hidden');
   elHud.classList.remove('hidden');
-  elInputWrap.classList.remove('hidden');
+  elChoices.classList.remove('hidden');
+  renderChoices([]);           // empty buttons until first asteroid spawns
   updateHUD();
+  resizeCanvas();
 
   clearInterval(state.spawnInterval);
   startSpawnTimer();
-
   if (state.animFrameId) cancelAnimationFrame(state.animFrameId);
   gameLoop();
-
-  // Only auto-focus on desktop (on mobile, keyboard popup obscures the game)
-  if (!('ontouchstart' in window)) {
-    setTimeout(() => elAnswer.focus(), 50);
-  }
 }
 
 function startSpawnTimer() {
@@ -365,56 +322,47 @@ function startSpawnTimer() {
 
 function spawnAsteroid() {
   if (!state.running) return;
-  const max = DIFFICULTY_CONFIG[state.difficulty].maxAsteroids;
-  if (state.asteroids.length >= max) return;
+  if (state.asteroids.length >= DIFFICULTY_CONFIG[state.difficulty].maxAsteroids) return;
   state.asteroids.push(new Asteroid(state.difficulty));
+  refreshChoices();
 }
 
 // ══════════════════════════════════════════════════════
-//  INPUT
+//  ANSWER CHOICE BUTTONS
 // ══════════════════════════════════════════════════════
-function submitAnswer() {
-  if (!state.running) return;
-  const typed = parseInt(elAnswer.value.trim(), 10);
-  elAnswer.value = '';
-  elAnswer.focus();
+document.querySelectorAll('.choice-btn').forEach(btn => {
+  function handleTap(e) {
+    e.preventDefault();
+    if (!state.running) return;
+    const value = parseInt(btn.dataset.value, 10);
+    if (isNaN(value)) return;
 
-  if (isNaN(typed)) return;
+    const idx = state.asteroids.findIndex(a => a.question.a === value);
+    if (idx !== -1) {
+      // Correct!
+      const ast = state.asteroids[idx];
+      const pts = ast.y < ch() / 2 ? 15 : 10;
+      state.score += pts;
+      state.correctCount++;
+      triggerExplosion(ast.x, ast.y, ast.color);
+      state.floatingTexts.push(new FloatingText(`+${pts}`, ast.x, ast.y - ast.size - 10));
+      state.asteroids.splice(idx, 1);
+      playSuccess();
+      updateHUD();
+      if (state.correctCount % 5 === 0) increaseSpeed();
 
-  const idx = state.asteroids.findIndex(a => a.question.a === typed);
-  if (idx !== -1) {
-    const ast = state.asteroids[idx];
-    const pts = ast.y < ch() / 2 ? 15 : 10;
-    state.score += pts;
-    state.correctCount++;
-    triggerExplosion(ast.x, ast.y, ast.color);
-    state.floatingTexts.push(new FloatingText(`+${pts}`, ast.x, ast.y - ast.size - 10));
-    state.asteroids.splice(idx, 1);
-    playSuccess();
-    updateHUD();
-    if (state.correctCount % 5 === 0) increaseSpeed();
-  } else {
-    playMiss();
-    elAnswer.classList.remove('shake');
-    void elAnswer.offsetWidth;
-    elAnswer.classList.add('shake');
-    setTimeout(() => elAnswer.classList.remove('shake'), 400);
+      btn.classList.add('flash-correct');
+      setTimeout(() => { btn.classList.remove('flash-correct'); refreshChoices(); }, 300);
+    } else {
+      // Wrong
+      playMiss();
+      btn.classList.add('flash-wrong');
+      setTimeout(() => btn.classList.remove('flash-wrong'), 400);
+    }
   }
-}
 
-// Keyboard Enter (desktop + hardware keyboards)
-elAnswer.addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); submitAnswer(); }
-});
-
-// Mobile "Go / Done" button (fires as enterkeyhint="go" action on some keyboards)
-elAnswer.addEventListener('search', submitAnswer);
-
-// Submit button tap (mobile)
-document.getElementById('btn-submit').addEventListener('click', submitAnswer);
-document.getElementById('btn-submit').addEventListener('touchend', e => {
-  e.preventDefault(); // prevent ghost click
-  submitAnswer();
+  btn.addEventListener('click',    handleTap);
+  btn.addEventListener('touchend', handleTap, { passive: false });
 });
 
 function increaseSpeed() {
@@ -422,7 +370,6 @@ function increaseSpeed() {
   const cfg = DIFFICULTY_CONFIG[state.difficulty];
   state.currentSpawnMs = Math.max(cfg.minSpawnMs, state.currentSpawnMs - 120);
   startSpawnTimer();
-  // Shift bg hue toward red
   state.bgHue = Math.max(0, state.bgHue - 15);
 }
 
@@ -431,9 +378,8 @@ function increaseSpeed() {
 // ══════════════════════════════════════════════════════
 function triggerExplosion(x, y, color) {
   const colors = [color, '#f9ca24', '#e74c3c', '#fff', '#0ff'];
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 14; i++)
     state.particles.push(new Particle(x, y, colors[i % colors.length]));
-  }
 }
 
 // ══════════════════════════════════════════════════════
@@ -441,8 +387,7 @@ function triggerExplosion(x, y, color) {
 // ══════════════════════════════════════════════════════
 function updateHUD() {
   elScore.textContent = `Score: ${state.score}`;
-  const level = Math.floor(state.correctCount / 5) + 1;
-  elLevel.textContent = `Level ${level}`;
+  elLevel.textContent = `Level ${Math.floor(state.correctCount / 5) + 1}`;
   elLives.textContent = '♥'.repeat(state.lives) + '♡'.repeat(Math.max(0, 3 - state.lives));
 }
 
@@ -460,41 +405,33 @@ function drawBackground() {
 
 function gameLoop() {
   if (!state.running) return;
-
   ctx.clearRect(0, 0, cw(), ch());
   drawBackground();
 
-  // Asteroids
   const missed = [];
   for (let i = state.asteroids.length - 1; i >= 0; i--) {
     const a = state.asteroids[i];
-    a.update();
-    a.draw(ctx);
-    if (a.isOffScreen()) {
-      missed.push(a);
-      state.asteroids.splice(i, 1);
-    }
+    a.update(); a.draw(ctx);
+    if (a.isOffScreen()) { missed.push(a); state.asteroids.splice(i, 1); }
   }
-  missed.forEach(a => {
-    state.lives--;
-    playMissLife();
-    updateHUD();
-    state.floatingTexts.push(new FloatingText('-1 ♥', a.x, ch() - 80, '#e74c3c'));
-  });
 
-  // Particles
+  if (missed.length) {
+    missed.forEach(a => {
+      state.lives--;
+      playMissLife();
+      state.floatingTexts.push(new FloatingText('-1 ♥', a.x, ch() - 40, '#e74c3c'));
+    });
+    updateHUD();
+    refreshChoices();
+  }
+
   state.particles.forEach(p => { p.update(); p.draw(ctx); });
   state.particles = state.particles.filter(p => !p.isDead());
 
-  // Floating texts
   state.floatingTexts.forEach(t => { t.update(); t.draw(ctx); });
   state.floatingTexts = state.floatingTexts.filter(t => !t.isDead());
 
-  if (state.lives <= 0) {
-    endGame();
-    return;
-  }
-
+  if (state.lives <= 0) { endGame(); return; }
   state.animFrameId = requestAnimationFrame(gameLoop);
 }
 
@@ -517,7 +454,7 @@ function endGame() {
 
   elFinalScore.textContent = `Final Score: ${state.score}`;
   elHud.classList.add('hidden');
-  elInputWrap.classList.add('hidden');
+  elChoices.classList.add('hidden');
   elGameOver.classList.remove('hidden');
 }
 
