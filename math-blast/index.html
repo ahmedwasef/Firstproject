@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Math Blast</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- MENU -->
+  <div id="screen-menu">
+    <h1>Math Blast 🚀</h1>
+    <p class="subtitle">Type the answer. Destroy the asteroids.</p>
+    <div class="difficulty-buttons">
+      <button class="btn-diff easy"   data-diff="easy">Easy<br><small>Ages 5–7 · Addition</small></button>
+      <button class="btn-diff medium" data-diff="medium">Medium<br><small>Ages 8–10 · Add &amp; Subtract</small></button>
+      <button class="btn-diff hard"   data-diff="hard">Hard<br><small>Ages 11–12 · × and ÷</small></button>
+    </div>
+    <p id="menu-highscore">Best Score: 0</p>
+    <p class="how-to">Type the answer and press <kbd>Enter</kbd> to destroy an asteroid</p>
+  </div>
+
+  <!-- HUD -->
+  <div id="screen-hud" class="hidden">
+    <span id="hud-score">Score: 0</span>
+    <span id="hud-level">Level 1</span>
+    <div id="hud-lives">♥ ♥ ♥</div>
+  </div>
+
+  <!-- ANSWER INPUT -->
+  <div id="input-wrap" class="hidden">
+    <input id="answer" type="number" placeholder="?" autocomplete="off" />
+  </div>
+
+  <!-- GAME OVER -->
+  <div id="screen-gameover" class="hidden">
+    <h2>Game Over</h2>
+    <p id="final-score"></p>
+    <p id="new-record" class="hidden">🏆 New High Score!</p>
+    <button id="btn-replay">Play Again</button>
+    <button id="btn-menu">Change Difficulty</button>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
