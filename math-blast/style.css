@@ -166,13 +166,15 @@ canvas {
    ANSWER INPUT
 ══════════════════════════════════ */
 #input-wrap {
-  bottom: env(safe-area-inset-bottom, 1.5rem);
+  /* Desktop: pinned to bottom; mobile: overridden by JS (visualViewport) */
   bottom: max(env(safe-area-inset-bottom, 0px) + 0.5rem, 1.5rem);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  /* Smooth slide when keyboard opens/closes */
+  transition: top 0.15s ease;
 }
 
 #answer {

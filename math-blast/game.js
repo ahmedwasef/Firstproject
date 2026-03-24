@@ -5,26 +5,44 @@
 const canvas  = document.getElementById('gameCanvas');
 const ctx     = canvas.getContext('2d');
 
-// ── Resize canvas — HiDPI/Retina aware ──────────────
+// ── Mobile detection ────────────────────────────────
+const IS_MOBILE = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+// ── Resize canvas + reposition input above keyboard ─
+// Uses visualViewport so iOS keyboard is handled correctly
 function resizeCanvas() {
-  const vw = window.visualViewport ? window.visualViewport.width  : window.innerWidth;
-  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  const vv  = window.visualViewport;
+  const vw  = vv ? vv.width  : window.innerWidth;
+  const vh  = vv ? vv.height : window.innerHeight;
+  const top = vv ? vv.offsetTop : 0;
   const dpr = window.devicePixelRatio || 1;
-  // Set CSS size
+
+  // Position canvas inside visible area (above keyboard on iOS)
+  canvas.style.top    = top + 'px';
   canvas.style.width  = vw + 'px';
   canvas.style.height = vh + 'px';
-  // Set actual pixel buffer (sharp on Retina/HiDPI)
-  canvas.width  = Math.round(vw  * dpr);
+
+  // HiDPI pixel buffer
+  canvas.width  = Math.round(vw * dpr);
   canvas.height = Math.round(vh * dpr);
-  // Scale context so game coords stay in CSS pixels
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // Keep input-wrap just above keyboard (JS-positioned on mobile)
+  if (IS_MOBILE && elInputWrap) {
+    elInputWrap.style.position = 'fixed';
+    elInputWrap.style.bottom   = 'auto';
+    elInputWrap.style.top      = (top + vh - 80) + 'px';
+    elInputWrap.style.left     = '50%';
+    elInputWrap.style.transform = 'translateX(-50%)';
+  }
 }
 resizeCanvas();
 
-// Re-render on orientation change, keyboard open/close
+// Re-render on orientation change and when keyboard opens/closes
 window.addEventListener('resize', resizeCanvas);
 if (window.visualViewport) {
-  window.visualViewport.addEventListener('resize', resizeCanvas);
+  window.visualViewport.addEventListener('resize',  resizeCanvas);
+  window.visualViewport.addEventListener('scroll',  resizeCanvas);
 }
 
 // ── Prevent page scroll during play ─────────────────
@@ -151,10 +169,23 @@ class FloatingText {
 // ══════════════════════════════════════════════════════
 //  ASTEROID
 // ══════════════════════════════════════════════════════
+// Desktop config / Mobile config (slower, fewer, bigger)
 const DIFFICULTY_CONFIG = {
-  easy:   { baseSpeed: 0.7,  spawnMs: 3000, minSpawnMs: 1200, color: '#27ae60' },
-  medium: { baseSpeed: 1.3,  spawnMs: 2200, minSpawnMs: 1000, color: '#e67e22' },
-  hard:   { baseSpeed: 2.1,  spawnMs: 1500, minSpawnMs: 800,  color: '#e74c3c' },
+  easy:   {
+    baseSpeed: IS_MOBILE ? 0.45 : 0.7,
+    spawnMs:   IS_MOBILE ? 4500 : 3000,  minSpawnMs: IS_MOBILE ? 2000 : 1200,
+    maxAsteroids: IS_MOBILE ? 2 : 6,
+  },
+  medium: {
+    baseSpeed: IS_MOBILE ? 0.85 : 1.3,
+    spawnMs:   IS_MOBILE ? 3500 : 2200,  minSpawnMs: IS_MOBILE ? 1500 : 1000,
+    maxAsteroids: IS_MOBILE ? 3 : 6,
+  },
+  hard:   {
+    baseSpeed: IS_MOBILE ? 1.4  : 2.1,
+    spawnMs:   IS_MOBILE ? 2500 : 1500,  minSpawnMs: IS_MOBILE ? 1200 : 800,
+    maxAsteroids: IS_MOBILE ? 3 : 6,
+  },
 };
 
 const ROCK_COLORS  = ['#a0522d', '#8b4513', '#cd853f', '#b8860b'];
@@ -163,11 +194,14 @@ const OP_COLORS    = { '+': '#27ae6099', '-': '#2980b999', '×': '#e67e2299', '�
 class Asteroid {
   constructor(difficulty) {
     const cfg   = DIFFICULTY_CONFIG[difficulty];
-    const pad   = 90;
+    // Larger rocks on mobile so equations are readable
+    const minSize = IS_MOBILE ? 68 : 50;
+    const maxSize = IS_MOBILE ? 92 : 78;
+    const pad   = IS_MOBILE ? 70 : 90;
     this.x      = randomInt(pad, cw() - pad);
     this.y      = -80;
-    this.speed  = cfg.baseSpeed + (Math.random() - 0.5) * 0.5;
-    this.size   = randomInt(50, 78);
+    this.speed  = cfg.baseSpeed + (Math.random() - 0.5) * 0.3;
+    this.size   = randomInt(minSize, maxSize);
     this.color  = ROCK_COLORS[randomInt(0, ROCK_COLORS.length - 1)];
     this.question = generateQuestion(difficulty);
     // Pre-compute jitter for irregular polygon
@@ -208,8 +242,11 @@ class Asteroid {
     c.lineWidth = 2;
     c.stroke();
 
-    // Question text
-    const fontSize = Math.max(14, Math.min(22, this.size * 0.38));
+    // Question text — larger on mobile for readability
+    const fontBase = IS_MOBILE ? 0.48 : 0.38;
+    const fontMin  = IS_MOBILE ? 18   : 14;
+    const fontMax  = IS_MOBILE ? 32   : 22;
+    const fontSize = Math.max(fontMin, Math.min(fontMax, this.size * fontBase));
     c.font = `bold ${fontSize}px Segoe UI, sans-serif`;
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -328,7 +365,8 @@ function startSpawnTimer() {
 
 function spawnAsteroid() {
   if (!state.running) return;
-  if (state.asteroids.length >= 6) return;
+  const max = DIFFICULTY_CONFIG[state.difficulty].maxAsteroids;
+  if (state.asteroids.length >= max) return;
   state.asteroids.push(new Asteroid(state.difficulty));
 }
 
