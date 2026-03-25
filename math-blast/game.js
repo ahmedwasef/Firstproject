@@ -7,8 +7,8 @@ const ctx    = canvas.getContext('2d');
 
 const IS_MOBILE = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
-// ── Keypad panel height (reserved at bottom) ─────────
-const PANEL_H = () => document.getElementById('keypad-panel').offsetHeight || 250;
+// ── Choices panel height (reserved at bottom) ────────
+const PANEL_H = () => document.getElementById('choices-panel').offsetHeight || 160;
 
 // ── Resize canvas to fill area ABOVE the choices panel ──
 function resizeCanvas() {
@@ -34,14 +34,10 @@ window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 300)
 function cw() { return parseFloat(canvas.style.width)  || canvas.width; }
 function ch() { return parseFloat(canvas.style.height) || canvas.height; }
 
-// ── Keyboard input (desktop) ─────────────────────────
+// ── Prevent page scroll ──────────────────────────────
 window.addEventListener('keydown', e => {
   if (['Space','ArrowUp','ArrowDown'].includes(e.code) && state.running)
     e.preventDefault();
-  if (!state.running) return;
-  if (e.key >= '0' && e.key <= '9') appendKey(e.key);
-  else if (e.key === 'Backspace') { e.preventDefault(); deleteKey(); }
-  else if (e.key === 'Enter')     { e.preventDefault(); submitKeypad(); }
 });
 
 // ── iOS AudioContext resume ──────────────────────────
@@ -105,48 +101,35 @@ function generateQuestion(difficulty) {
 }
 
 // ══════════════════════════════════════════════════════
-//  KEYPAD
+//  CHOICES
 // ══════════════════════════════════════════════════════
-function updateKeypadDisplay() {
-  elKeypadInput.textContent = state.keypadInput || '–';
-}
+function buildChoices(asteroids) {
+  const correct = asteroids.map(a => a.question.a);
+  const pool = new Set(correct);
 
-function appendKey(digit) {
-  if (state.keypadInput.length >= 4) return;
-  state.keypadInput += digit;
-  updateKeypadDisplay();
-}
-
-function deleteKey() {
-  state.keypadInput = state.keypadInput.slice(0, -1);
-  updateKeypadDisplay();
-}
-
-function submitKeypad() {
-  if (!state.keypadInput) return;
-  const value = parseInt(state.keypadInput, 10);
-  state.keypadInput = '';
-  updateKeypadDisplay();
-
-  const idx = state.asteroids.findIndex(a => a.question.a === value);
-  if (idx !== -1) {
-    const ast = state.asteroids[idx];
-    const pts = ast.y < ch() / 2 ? 15 : 10;
-    state.score += pts;
-    state.correctCount++;
-    triggerExplosion(ast.x, ast.y, ast.color);
-    state.floatingTexts.push(new FloatingText(`+${pts}`, ast.x, ast.y - ast.size - 10));
-    state.asteroids.splice(idx, 1);
-    playSuccess();
-    updateHUD();
-    if (state.correctCount % 5 === 0) increaseSpeed();
-    elKeypadDisp.classList.add('flash-correct');
-    setTimeout(() => elKeypadDisp.classList.remove('flash-correct'), 320);
-  } else {
-    playMiss();
-    elKeypadDisp.classList.add('flash-wrong');
-    setTimeout(() => elKeypadDisp.classList.remove('flash-wrong'), 380);
+  while (pool.size < 4) {
+    const base   = correct[randomInt(0, correct.length - 1)];
+    const offset = randomInt(1, 5) * (Math.random() < 0.5 ? 1 : -1);
+    pool.add(Math.max(0, base + offset));
   }
+
+  return [...pool].sort(() => Math.random() - 0.5);
+}
+
+function renderChoices(choices) {
+  const btns = document.querySelectorAll('.choice-btn');
+  btns.forEach((btn, i) => {
+    btn.textContent   = choices[i] !== undefined ? choices[i] : '–';
+    btn.dataset.value = choices[i] !== undefined ? choices[i] : '';
+    btn.disabled      = choices[i] === undefined;
+    btn.classList.remove('flash-correct', 'flash-wrong');
+  });
+}
+
+function refreshChoices() {
+  if (!state.running || state.asteroids.length === 0) { renderChoices([]); return; }
+  state.currentChoices = buildChoices(state.asteroids);
+  renderChoices(state.currentChoices);
 }
 
 // ══════════════════════════════════════════════════════
@@ -266,16 +249,14 @@ const state = {
   asteroids: [], particles: [], floatingTexts: [],
   spawnInterval: null, animFrameId: null,
   currentSpawnMs: 3000, bgHue: 230,
-  keypadInput: '',
+  currentChoices: [],
 };
 
 // ── DOM refs ─────────────────────────────────────────
 const elMenu       = document.getElementById('screen-menu');
 const elHud        = document.getElementById('screen-hud');
 const elGameOver   = document.getElementById('screen-gameover');
-const elKeypad     = document.getElementById('keypad-panel');
-const elKeypadDisp = document.getElementById('keypad-display');
-const elKeypadInput= document.getElementById('keypad-input');
+const elChoices    = document.getElementById('choices-panel');
 const elScore      = document.getElementById('hud-score');
 const elLevel      = document.getElementById('hud-level');
 const elLives      = document.getElementById('hud-lives');
@@ -289,7 +270,7 @@ const elHighScore  = document.getElementById('menu-highscore');
 function initMenu() {
   elMenu.classList.remove('hidden');
   elHud.classList.add('hidden');
-  elKeypad.classList.add('hidden');
+  elChoices.classList.add('hidden');
   elGameOver.classList.add('hidden');
   elHighScore.textContent = `Best Score: ${localStorage.getItem('mathblast_hi') || 0}`;
 }
@@ -309,14 +290,14 @@ function startGame(difficulty) {
     asteroids: [], particles: [], floatingTexts: [],
     running: true, bgHue: 230,
     currentSpawnMs: DIFFICULTY_CONFIG[difficulty].spawnMs,
-    keypadInput: '',
+    currentChoices: [],
   });
 
   elMenu.classList.add('hidden');
   elGameOver.classList.add('hidden');
   elHud.classList.remove('hidden');
-  elKeypad.classList.remove('hidden');
-  updateKeypadDisplay();
+  elChoices.classList.remove('hidden');
+  renderChoices([]);
   updateHUD();
   resizeCanvas();
 
@@ -335,19 +316,38 @@ function spawnAsteroid() {
   if (!state.running) return;
   if (state.asteroids.length >= DIFFICULTY_CONFIG[state.difficulty].maxAsteroids) return;
   state.asteroids.push(new Asteroid(state.difficulty));
+  refreshChoices();
 }
 
 // ══════════════════════════════════════════════════════
-//  KEYPAD BUTTON HANDLERS
+//  ANSWER CHOICE BUTTONS
 // ══════════════════════════════════════════════════════
-document.querySelectorAll('.key-btn').forEach(btn => {
+document.querySelectorAll('.choice-btn').forEach(btn => {
   function handleTap(e) {
     e.preventDefault();
     if (!state.running) return;
-    const key = btn.dataset.key;
-    if (key === '⌫')      deleteKey();
-    else if (key === '✓') submitKeypad();
-    else                  appendKey(key);
+    const value = parseInt(btn.dataset.value, 10);
+    if (isNaN(value)) return;
+
+    const idx = state.asteroids.findIndex(a => a.question.a === value);
+    if (idx !== -1) {
+      const ast = state.asteroids[idx];
+      const pts = ast.y < ch() / 2 ? 15 : 10;
+      state.score += pts;
+      state.correctCount++;
+      triggerExplosion(ast.x, ast.y, ast.color);
+      state.floatingTexts.push(new FloatingText(`+${pts}`, ast.x, ast.y - ast.size - 10));
+      state.asteroids.splice(idx, 1);
+      playSuccess();
+      updateHUD();
+      if (state.correctCount % 5 === 0) increaseSpeed();
+      btn.classList.add('flash-correct');
+      setTimeout(() => { btn.classList.remove('flash-correct'); refreshChoices(); }, 300);
+    } else {
+      playMiss();
+      btn.classList.add('flash-wrong');
+      setTimeout(() => btn.classList.remove('flash-wrong'), 400);
+    }
   }
   btn.addEventListener('click',    handleTap);
   btn.addEventListener('touchend', handleTap, { passive: false });
@@ -410,6 +410,7 @@ function gameLoop() {
       state.floatingTexts.push(new FloatingText('-1 ♥', a.x, ch() - 40, '#e74c3c'));
     });
     updateHUD();
+    refreshChoices();
   }
 
   state.particles.forEach(p => { p.update(); p.draw(ctx); });
@@ -441,7 +442,7 @@ function endGame() {
 
   elFinalScore.textContent = `Final Score: ${state.score}`;
   elHud.classList.add('hidden');
-  elKeypad.classList.add('hidden');
+  elChoices.classList.add('hidden');
   elGameOver.classList.remove('hidden');
 }
 
